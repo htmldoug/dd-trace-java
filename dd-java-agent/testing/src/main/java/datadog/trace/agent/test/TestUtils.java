@@ -116,8 +116,11 @@ public class TestUtils {
   public static byte[] convertToByteArray(final Class<?> clazz) throws IOException {
     InputStream inputStream = null;
     try {
-      inputStream =
-          clazz.getClassLoader().getResourceAsStream(Utils.getResourceName(clazz.getName()));
+      ClassLoader loader = clazz.getClassLoader();
+      if (null == loader) {
+        loader = Utils.getBootstrapProxy();
+      }
+      inputStream = loader.getResourceAsStream(Utils.getResourceName(clazz.getName()));
       return convertToByteArray(inputStream);
     } finally {
       if (inputStream != null) {

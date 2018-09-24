@@ -55,7 +55,21 @@ public final class DispatcherServletInstrumentation extends Instrumenter.Default
   public static class DispatcherAdvice {
 
     @Advice.OnMethodEnter(suppress = Throwable.class)
-    public static Scope startSpan(@Advice.Argument(0) final ModelAndView mv) {
+    public static Scope startSpan(
+        @Advice.This final Object thiz,
+        @Advice.Origin("#m#d") final String nodeSig,
+        @Advice.Argument(0) final ModelAndView mv) {
+
+      /*
+      {
+        final AutotraceNode springNode = AutotraceGraph.discoverOrGet(thiz.getClass().getClassLoader(), thiz.getClass().getName(), nodeSig);
+        springNode.expand();
+        for (final AutotraceNode node : springNode.getEdges()) {
+          node.enableTracing(true);
+        }
+        springNode.enableTracing(false); // already tracing with ootb instrumentation
+      }
+      */
 
       final Tracer.SpanBuilder builder =
           GlobalTracer.get()

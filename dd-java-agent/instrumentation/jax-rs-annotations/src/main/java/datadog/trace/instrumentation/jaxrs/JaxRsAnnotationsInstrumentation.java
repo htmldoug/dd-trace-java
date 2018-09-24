@@ -9,6 +9,8 @@ import static net.bytebuddy.matcher.ElementMatchers.named;
 import com.google.auto.service.AutoService;
 import datadog.trace.agent.tooling.Instrumenter;
 import datadog.trace.api.DDTags;
+import datadog.trace.bootstrap.autotrace.AutotraceGraph;
+import datadog.trace.bootstrap.autotrace.AutotraceNode;
 import io.opentracing.Scope;
 import io.opentracing.Span;
 import io.opentracing.tag.Tags;
@@ -58,7 +60,8 @@ public final class JaxRsAnnotationsInstrumentation extends Instrumenter.Default 
   public static class JaxRsAnnotationsAdvice {
 
     @Advice.OnMethodEnter(suppress = Throwable.class)
-    public static Scope nameSpan(@Advice.Origin final Method method) {
+    public static Scope nameSpan(
+        @Advice.Origin final Method method, @Advice.Origin("#m#d") final String nodeSig) {
 
       // TODO: do we need caching for this?
       final LinkedList<Path> paths = new LinkedList<>();
@@ -121,6 +124,16 @@ public final class JaxRsAnnotationsInstrumentation extends Instrumenter.Default 
       }
 
       final String operationName = className + "." + methodName;
+
+      {
+        final AutotraceNode jaxNode =
+            AutotraceGraph.get().getNode(clazz.getClassLoader(), clazz.getName(), nodeSig, true);
+        jaxNode.expand();
+        for (final AutotraceNode node : jaxNode.getEdges()) {
+          node.enableTracing(true);
+        }
+        jaxNode.enableTracing(false); // already tracing with ootb instrumentation
+      }
 
       return GlobalTracer.get()
           .buildSpan(operationName)

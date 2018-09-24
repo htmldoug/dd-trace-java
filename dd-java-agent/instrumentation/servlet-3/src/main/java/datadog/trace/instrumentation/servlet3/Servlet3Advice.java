@@ -4,6 +4,8 @@ import static io.opentracing.log.Fields.ERROR_OBJECT;
 
 import datadog.trace.api.DDSpanTypes;
 import datadog.trace.api.DDTags;
+import datadog.trace.bootstrap.autotrace.AutotraceGraph;
+import datadog.trace.bootstrap.autotrace.AutotraceNode;
 import datadog.trace.context.TraceScope;
 import io.opentracing.Scope;
 import io.opentracing.Span;
@@ -23,7 +25,22 @@ public class Servlet3Advice {
 
   @Advice.OnMethodEnter(suppress = Throwable.class)
   public static Scope startSpan(
-      @Advice.This final Object servlet, @Advice.Argument(0) final ServletRequest req) {
+      @Advice.This final Object thiz,
+      @Advice.Origin("#t") final String servletClassName,
+      @Advice.Origin("#m#d") final String nodeSig,
+      @Advice.This final Object servlet,
+      @Advice.Argument(0) final ServletRequest req) {
+    {
+      final AutotraceNode servletNode =
+          AutotraceGraph.get()
+              .getNode(thiz.getClass().getClassLoader(), servletClassName, nodeSig, true);
+
+      servletNode.expand();
+      for (final AutotraceNode node : servletNode.getEdges()) {
+        node.enableTracing(true);
+      }
+      servletNode.enableTracing(false); // already tracing with servlet instrumentation
+    }
     if (GlobalTracer.get().activeSpan() != null || !(req instanceof HttpServletRequest)) {
       // Tracing might already be applied by the FilterChain.  If so ignore this.
       return null;

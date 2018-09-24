@@ -66,7 +66,7 @@ public abstract class AgentTestRunner extends Specification {
   private static final AtomicInteger INSTRUMENTATION_ERROR_COUNT = new AtomicInteger();
   private static final ErrorCountingListener ERROR_LISTENER = new ErrorCountingListener();
 
-  private static final Instrumentation instrumentation;
+  protected static final Instrumentation instrumentation;
   private static volatile ClassFileTransformer activeTransformer = null;
 
   static {

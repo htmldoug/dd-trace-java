@@ -8,6 +8,7 @@ import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.reflect.ClassPath;
 import datadog.trace.agent.tooling.Utils;
+import datadog.trace.bootstrap.autotrace.AutotraceGraph;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -17,6 +18,7 @@ import java.net.URLClassLoader;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.jar.JarFile;
 import net.bytebuddy.agent.ByteBuddyAgent;
 import net.bytebuddy.dynamic.ClassFileLocator;
@@ -45,6 +47,8 @@ public class SpockRunner extends Sputnik {
       "javax.servlet.ServletContainerInitializer",
       "javax.servlet.ServletContext"
     };
+    // FIXME: spock test runner references bootstrap proxy (a bootstrap class) before the jar is
+    // appended to lookup. This can cause linkage errors
     TEST_BOOTSTRAP_PREFIXES =
         Arrays.copyOf(
             BOOTSTRAP_PACKAGE_PREFIXES, BOOTSTRAP_PACKAGE_PREFIXES.length + testBS.length);
@@ -53,6 +57,15 @@ public class SpockRunner extends Sputnik {
     }
 
     setupBootstrapClasspath();
+
+    // FIXME: spock test runner references bootstrap proxy (a bootstrap class) before the jar is
+    // appended to lookup. This can cause linkage errors
+    AutotraceGraph.set(
+        new AutotraceGraph(
+            Utils.getBootstrapProxy(),
+            ByteBuddyAgent.getInstrumentation(),
+            TimeUnit.NANOSECONDS.convert(10, TimeUnit.MILLISECONDS),
+            TimeUnit.NANOSECONDS.convert(1, TimeUnit.MILLISECONDS)));
   }
 
   private final InstrumentationClassLoader customLoader;

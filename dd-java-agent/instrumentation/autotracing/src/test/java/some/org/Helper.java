@@ -64,4 +64,12 @@ public class Helper {
     Thread.sleep(10);
     throw new RuntimeException("What did you think would happen?");
   }
+
+  public void interfaceInvoker(SomeInterface someInterface) {
+    try {
+      someInterface.someMethod(10);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
 }

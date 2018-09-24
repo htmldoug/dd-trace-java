@@ -1,6 +1,7 @@
 import datadog.trace.bootstrap.autotrace.AutotraceGraph
 import io.opentracing.tag.Tags
 import some.org.Helper
+import some.org.SomeInterface
 import spock.lang.Ignore
 
 import java.lang.reflect.Method
@@ -252,6 +253,103 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
     }
   }
 
+  def "trace interface implementations" () {
+    setup:
+    AutotraceGraph graph = AutotraceGraph.get()
+
+    when:
+    // preload impl1
+    new SomeInterface.Impl1().someMethod(0)
+    graph.getNode(Helper.getClassLoader(), Helper.getName(), "interfaceInvoker(Lsome/org/SomeInterface;)V", true).enableTracing(true)
+    // warm-up
+    runUnderTrace("someTrace") {
+      new Helper().interfaceInvoker(new SomeInterface.Impl1())
+    }
+    TEST_WRITER.waitForTraces(1)
+    TEST_WRITER.clear()
+    runUnderTrace("someTrace") {
+      // impl1 already loaded. Discovered by expansion
+      new Helper().interfaceInvoker(new SomeInterface.Impl1())
+    }
+
+   then:
+    assertTraces(TEST_WRITER, 1) {
+      trace(0, 3) {
+        span(0) {
+          serviceName "unnamed-java-app"
+          operationName "someTrace"
+          errored false
+          tags {
+            defaultTags()
+          }
+        }
+        span(1) {
+          serviceName "unnamed-java-app"
+          operationName Helper.getSimpleName() + '.interfaceInvoker'
+          errored false
+          tags {
+            "$Tags.COMPONENT.key" "autotrace"
+            "span.origin.type" "some.org.Helper"
+            "span.origin.method" "interfaceInvoker(Lsome/org/SomeInterface;)V"
+            defaultTags()
+          }
+        }
+        span(2) {
+          serviceName "unnamed-java-app"
+          operationName 'SomeInterface_Impl1.someMethod'
+          errored false
+          tags {
+            "$Tags.COMPONENT.key" "autotrace"
+            "span.origin.type" 'some.org.SomeInterface$Impl1'
+            "span.origin.method" "someMethod(J)V"
+            defaultTags()
+          }
+        }
+      }
+    }
+
+   when:
+   TEST_WRITER.clear()
+   runUnderTrace("someTrace") {
+     new Helper().interfaceInvoker(new SomeInterface.Impl2())
+   }
+   then:
+   assertTraces(TEST_WRITER, 1) {
+     trace(0, 3) {
+       span(0) {
+         serviceName "unnamed-java-app"
+         operationName "someTrace"
+         errored false
+         tags {
+           defaultTags()
+         }
+       }
+       span(1) {
+         serviceName "unnamed-java-app"
+         operationName Helper.getSimpleName() + '.interfaceInvoker'
+         errored false
+         tags {
+           "$Tags.COMPONENT.key" "autotrace"
+           "span.origin.type" "some.org.Helper"
+           "span.origin.method" "interfaceInvoker(Lsome/org/SomeInterface;)V"
+           defaultTags()
+         }
+       }
+       span(2) {
+         serviceName "unnamed-java-app"
+         operationName 'SomeInterface_Impl2.someMethod'
+         errored false
+         tags {
+           "$Tags.COMPONENT.key" "autotrace"
+           "span.origin.type" 'some.org.SomeInterface$Impl2'
+           "span.origin.method" "someMethod(J)V"
+           defaultTags()
+         }
+       }
+     }
+   }
+  }
+
   // TODO: Reflection linking
   @Ignore
   def "trace reflection"() {
@@ -289,12 +387,6 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
 
   @Ignore
   def "trace async" () {
-    expect:
-    1 == 1
-  }
-
-  @Ignore
-  def "trace interface impl" () {
     expect:
     1 == 1
   }

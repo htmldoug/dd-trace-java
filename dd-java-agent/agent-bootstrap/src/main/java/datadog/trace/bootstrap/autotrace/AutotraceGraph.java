@@ -34,7 +34,7 @@ public class AutotraceGraph {
       long traceMethodThresholdNanos,
       long disableTraceThresholdNanos) {
     this.bootstrapProxy = bootstrapProxy;
-    this.mutator = new GraphMutator.Blocking(instrumentation);
+    this.mutator = new GraphMutator.Blocking(this, instrumentation);
     this.traceMethodThresholdNanos = traceMethodThresholdNanos;
     this.disableTraceThresholdNanos = disableTraceThresholdNanos;
   }

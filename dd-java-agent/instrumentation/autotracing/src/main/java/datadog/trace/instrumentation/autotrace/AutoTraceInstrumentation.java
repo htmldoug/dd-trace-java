@@ -3,6 +3,7 @@ package datadog.trace.instrumentation.autotrace;
 import static io.opentracing.log.Fields.ERROR_OBJECT;
 
 import com.google.auto.service.AutoService;
+import datadog.trace.agent.tooling.AgentInstaller;
 import datadog.trace.agent.tooling.DDTransformers;
 import datadog.trace.agent.tooling.ExceptionHandlers;
 import datadog.trace.agent.tooling.Instrumenter;
@@ -15,8 +16,11 @@ import io.opentracing.Span;
 import io.opentracing.tag.Tags;
 import io.opentracing.util.GlobalTracer;
 import java.security.ProtectionDomain;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
@@ -42,6 +46,17 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default {
     final ThreadLocal<ClassLoader> loaderUnderTransform = new ThreadLocal<>();
     final ThreadLocal<TypeDescription> typeUnderTransform = new ThreadLocal<>();
 
+    // TODO: right way to bootstrap the graph?
+    if (AutotraceGraph.get() == null) {
+      AutotraceGraph.set(
+          new AutotraceGraph(
+              Utils.getBootstrapProxy(),
+              AgentInstaller.getInstrumentation(),
+              TimeUnit.NANOSECONDS.convert(10, TimeUnit.MILLISECONDS),
+              TimeUnit.NANOSECONDS.convert(1, TimeUnit.MILLISECONDS)));
+    }
+    final AutotraceGraph graph = AutotraceGraph.get();
+
     return parentAgentBuilder
         .type(
             new AgentBuilder.RawMatcher() {
@@ -54,7 +69,81 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default {
                   ProtectionDomain protectionDomain) {
                 loaderUnderTransform.set(null);
                 typeUnderTransform.set(null);
-                if (AutotraceGraph.get().isDiscovered(classLoader, typeDescription.getName())) {
+
+                classLoader = null == classLoader ? Utils.getBootstrapProxy() : classLoader;
+
+                try {
+                  List<TypeDescription> superTypes = new ArrayList<>();
+                  superTypes.addAll(typeDescription.getInterfaces().asErasures());
+                  if (typeDescription.getSuperClass() != null) {
+                    superTypes.add(typeDescription.getSuperClass().asErasure());
+                  }
+                  for (TypeDescription superType : superTypes) {
+                    while (superType != null) {
+                      final Class<?> superClass = classLoader.loadClass(superType.getName());
+                      if (graph.isDiscovered(superClass.getClassLoader(), superType.getName())) {
+                        for (final MethodDescription.InDefinedShape methodDescription :
+                            superType.getDeclaredMethods()) {
+                          final String superTypeSig =
+                              methodDescription.getName() + methodDescription.getDescriptor();
+                          final AutotraceNode superNode =
+                              graph.getNode(
+                                  superClass.getClassLoader(),
+                                  superType.getName(),
+                                  superTypeSig,
+                                  false);
+                          if (superNode != null) {
+                            // see if the type under transform implements an autotraced method
+                            for (final MethodDescription.InDefinedShape implMethod :
+                                typeDescription.getDeclaredMethods()) {
+                              if (superTypeSig.equals(
+                                  implMethod.getName() + implMethod.getDescriptor())) {
+                                // add implementation node to the graph
+                                AutotraceNode implNode =
+                                    graph.getNode(
+                                        classLoader,
+                                        typeDescription.getName(),
+                                        superTypeSig,
+                                        false);
+                                if (implNode == null) {
+                                  implNode =
+                                      graph.getNode(
+                                          classLoader,
+                                          typeDescription.getName(),
+                                          superTypeSig,
+                                          true);
+                                  log.debug(
+                                      "Matcher found implementation for {} -- {}",
+                                      superNode,
+                                      implNode);
+                                  superNode.addImplementations(implNode);
+                                  implNode.addSuperNode(superNode);
+                                  if (superNode.isTracingEnabled()) {
+                                    implNode.halfEnableTracing(true);
+                                  }
+                                  if (superNode.isExpanded()) {
+                                    implNode.halfExpand();
+                                  }
+                                  break;
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                      superType =
+                          superType.getSuperClass() == null
+                              ? null
+                              : superType.getSuperClass().asErasure();
+                    }
+                  }
+
+                } catch (ClassNotFoundException cnfe) {
+                  log.debug(
+                      "Failed to apply autotrace hierarchy detection for " + typeDescription, cnfe);
+                }
+
+                if (graph.isDiscovered(classLoader, typeDescription.getName())) {
                   loaderUnderTransform.set(classLoader);
                   typeUnderTransform.set(typeDescription);
                   return true;

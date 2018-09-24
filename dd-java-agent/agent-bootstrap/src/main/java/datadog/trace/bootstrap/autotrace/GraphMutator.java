@@ -1,15 +1,18 @@
 package datadog.trace.bootstrap.autotrace;
 
 import java.lang.instrument.Instrumentation;
+import java.lang.reflect.Method;
 import lombok.extern.slf4j.Slf4j;
 
 /** Means of updating the state of an autotrace graph. */
 @Slf4j
 abstract class GraphMutator {
   protected final Instrumentation instrumentation;
+  protected final AutotraceGraph graph;
 
-  public GraphMutator(Instrumentation instrumentation) {
+  public GraphMutator(AutotraceGraph graph, Instrumentation instrumentation) {
     this.instrumentation = instrumentation;
+    this.graph = graph;
   }
 
   /**
@@ -30,20 +33,66 @@ abstract class GraphMutator {
       AutotraceNode node, boolean doTrace, Runnable afterTracingSet);
 
   static class Blocking extends GraphMutator {
-    public Blocking(Instrumentation instrumentation) {
-      super(instrumentation);
+    public Blocking(AutotraceGraph graph, Instrumentation instrumentation) {
+      super(graph, instrumentation);
     }
 
     @Override
     public void expand(AutotraceNode node, Runnable afterExpansionComplete) {
-      // if: set node state to expanded
-      // - run bytecode analysis and find all callers
-      // - get all loaded classes
-      //   - find subtypes
-      //   - find supertypes
       try {
-        instrumentation.retransformClasses(node.getClassLoader().loadClass(node.getClassName()));
+        // - get all loaded classes
+        //   - find subtypes
+        //   - find supertypes
+
+        final Class<?> nodeClass = node.getClassLoader().loadClass(node.getClassName());
+
+        if (!(node.isPrivate() || node.isStatic())) {
+          // could use a for loop but I think that's harder to read
+          Class<?> superClass = nodeClass.getSuperclass();
+          boolean foundSuperMethod = false;
+          while (superClass != null && !foundSuperMethod) {
+            // TODO: duplicate code
+            for (Method method : superClass.getDeclaredMethods()) {
+              final String typeSignature =
+                  method.getName() + AutotraceGraph.getMethodTypeDescriptor(method);
+              if (node.getMethodTypeSignature().equals(typeSignature)) {
+                AutotraceNode superNode =
+                    graph.getNode(
+                        superClass.getClassLoader(), superClass.getName(), typeSignature, true);
+                node.addSuperNode(superNode);
+                foundSuperMethod = true;
+                break;
+              }
+            }
+            superClass = superClass.getSuperclass();
+          }
+          final Class[] loadedClasses = instrumentation.getAllLoadedClasses();
+          for (Class<?> clazz : loadedClasses) {
+            if (nodeClass != clazz && nodeClass.isAssignableFrom(clazz)) {
+              for (Method method : clazz.getDeclaredMethods()) {
+                final String typeSignature =
+                    method.getName() + AutotraceGraph.getMethodTypeDescriptor(method);
+                if (node.getMethodTypeSignature().equals(typeSignature)) {
+                  AutotraceNode implNode =
+                      graph.getNode(clazz.getClassLoader(), clazz.getName(), typeSignature, true);
+                  node.addImplementations(implNode);
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        // run bytecode analysis and find all callers
+        instrumentation.retransformClasses(nodeClass);
         afterExpansionComplete.run();
+        for (AutotraceNode implNode : node.getImplementations()) {
+          implNode.expand();
+        }
+        final AutotraceNode superNode = node.getSuperNode();
+        if (superNode != null) {
+          superNode.expand();
+        }
       } catch (Exception e) {
         log.debug("Failed to retransform bytecode for node " + node, e);
       }
@@ -54,6 +103,16 @@ abstract class GraphMutator {
       try {
         instrumentation.retransformClasses(node.getClassLoader().loadClass(node.getClassName()));
         afterTraceSet.run();
+        if (doTrace) {
+          node.expand();
+          for (AutotraceNode implNode : node.getImplementations()) {
+            implNode.enableTracing(doTrace);
+          }
+          final AutotraceNode superNode = node.getSuperNode();
+          if (superNode != null) {
+            superNode.enableTracing(doTrace);
+          }
+        }
       } catch (Exception e) {
         log.debug("Failed to retransform bytecode for node " + node, e);
         if (doTrace) {
@@ -66,8 +125,8 @@ abstract class GraphMutator {
 
   // TODO
   static class Async extends GraphMutator {
-    public Async(Instrumentation instrumentation) {
-      super(instrumentation);
+    public Async(AutotraceGraph graph, Instrumentation instrumentation) {
+      super(graph, instrumentation);
     }
 
     @Override

@@ -114,10 +114,8 @@ public class AgentInstaller {
         final boolean loaded,
         final Throwable throwable) {
       log.debug(
-          "Failed to handle {} for transformation on classloader {}: {}",
-          typeName,
-          classLoader,
-          throwable.getMessage());
+          "Failed to handle " + typeName + " for transformation on classloader: " + classLoader,
+          throwable);
     }
 
     @Override

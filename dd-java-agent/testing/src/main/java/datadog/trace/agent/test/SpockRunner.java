@@ -60,12 +60,6 @@ public class SpockRunner extends Sputnik {
 
     // FIXME: spock test runner references bootstrap proxy (a bootstrap class) before the jar is
     // appended to lookup. This can cause linkage errors
-    AutotraceGraph.set(
-        new AutotraceGraph(
-            Utils.getBootstrapProxy(),
-            ByteBuddyAgent.getInstrumentation(),
-            TimeUnit.NANOSECONDS.convert(10, TimeUnit.MILLISECONDS),
-            TimeUnit.NANOSECONDS.convert(1, TimeUnit.MILLISECONDS)));
   }
 
   private final InstrumentationClassLoader customLoader;

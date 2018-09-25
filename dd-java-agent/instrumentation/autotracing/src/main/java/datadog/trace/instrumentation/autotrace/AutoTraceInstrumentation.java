@@ -33,28 +33,27 @@ import net.bytebuddy.utility.JavaModule;
 @Slf4j
 @AutoService(Instrumenter.class)
 public final class AutoTraceInstrumentation extends Instrumenter.Default {
+  // TODO: ugly
+  // FIXME: strong classloader ref
+  private static final ThreadLocal<ClassLoader> loaderUnderTransform = new ThreadLocal<>();
+  private static final ThreadLocal<TypeDescription> typeUnderTransform = new ThreadLocal<>();
 
   public AutoTraceInstrumentation() {
     super("autotrace");
+    // TODO: right way to initialize the graph?
+    if (AutotraceGraph.get() == null) {
+      AutotraceGraph.set(
+        new AutotraceGraph(
+          Utils.getBootstrapProxy(),
+          AgentInstaller.getInstrumentation(),
+          TimeUnit.NANOSECONDS.convert(10, TimeUnit.MILLISECONDS),
+          TimeUnit.NANOSECONDS.convert(1, TimeUnit.MILLISECONDS)));
+    }
   }
 
   // TODO:
   @Override
   public AgentBuilder instrument(final AgentBuilder parentAgentBuilder) {
-    // TODO: ugly
-    // FIXME: strong classloader ref
-    final ThreadLocal<ClassLoader> loaderUnderTransform = new ThreadLocal<>();
-    final ThreadLocal<TypeDescription> typeUnderTransform = new ThreadLocal<>();
-
-    // TODO: right way to bootstrap the graph?
-    if (AutotraceGraph.get() == null) {
-      AutotraceGraph.set(
-          new AutotraceGraph(
-              Utils.getBootstrapProxy(),
-              AgentInstaller.getInstrumentation(),
-              TimeUnit.NANOSECONDS.convert(10, TimeUnit.MILLISECONDS),
-              TimeUnit.NANOSECONDS.convert(1, TimeUnit.MILLISECONDS)));
-    }
     final AutotraceGraph graph = AutotraceGraph.get();
 
     return parentAgentBuilder

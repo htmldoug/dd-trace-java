@@ -26,11 +26,13 @@ public class MethodExpander implements AsmVisitorWrapper {
 
   public MethodExpander(
       ClassLoader classLoader, String className, List<AutotraceNode> nodesToExpand) {
+    log.debug("autotrace expansion for {}", className);
     for (final AutotraceNode node : nodesToExpand) {
       if (!node.getClassName().equals(className)) {
         throw new IllegalStateException(
             "Node <" + node + " does not match visited type: " + className);
       }
+      log.debug(" -- search for {}", node.getMethodTypeSignature());
     }
     this.nodesToExpand = nodesToExpand;
     this.className = className;
@@ -80,7 +82,7 @@ public class MethodExpander implements AsmVisitorWrapper {
       MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
       final String nodeSignature = name + descriptor;
       for (final AutotraceNode node : nodesToExpand) {
-        if (node.getMethodTypeSignature().equals(nodeSignature) && (!node.isExpanded())) {
+        if (node.getMethodTypeSignature().equals(nodeSignature)) {
           log.debug("Applying autotrace expansion to {}.{}{}", className, name, descriptor);
           mv = new ExpansionMethodVisitor(node, mv);
         }
@@ -97,24 +99,37 @@ public class MethodExpander implements AsmVisitorWrapper {
         this.node = node;
       }
 
-      @Override
-      public void visitMethodInsn(
-          int opcode, String owner, String name, String descriptor, boolean isInterface) {
+      private void addEdge(String className, String methodName, String methodDesc) {
         try {
-          final String className = Utils.getClassName(owner);
           final AutotraceNode edge =
-              AutotraceGraph.get()
-                  .getNode(
-                      classLoader.loadClass(className).getClassLoader(),
-                      className,
-                      name + descriptor,
-                      true);
+            AutotraceGraph.get()
+              .getNode(
+                // TODO: don't load classes here (under a transformer)
+                classLoader.loadClass(className).getClassLoader(),
+                className,
+                methodName + methodDesc,
+                true);
           if (!edges.contains(edge)) {
+            // TODO: rm this debug or clean up
+            log.debug(" -- found edge: {}#{}{}", className, methodName, methodDesc);
             edges.add(edge);
           }
         } catch (ClassNotFoundException e) {
-          log.debug("exception discovering edge: " + opcode + " : " + name + descriptor, e);
+          log.debug("exception discovering edge: " + className + "#" + methodName + methodDesc, e);
         }
+      }
+
+      @Override
+      public void visitMethodInsn(int opcode, String owner, String name, String descriptor) {
+        addEdge(className, name, descriptor);
+        super.visitMethodInsn(opcode, owner, name, descriptor);
+      }
+
+      @Override
+      public void visitMethodInsn(
+          int opcode, String owner, String name, String descriptor, boolean isInterface) {
+        final String className = Utils.getClassName(owner);
+        addEdge(className, name, descriptor);
         super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
       }
 

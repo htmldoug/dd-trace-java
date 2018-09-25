@@ -19,7 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class AutotraceGraph {
   private static final AtomicReference<AutotraceGraph> globalGraph =
-      new AtomicReference<AutotraceGraph>(null);
+      new AtomicReference<>(null);
 
   private final ClassLoader bootstrapProxy;
   private final GraphMutator mutator;
@@ -30,18 +30,18 @@ public class AutotraceGraph {
 
   public AutotraceGraph(
       ClassLoader bootstrapProxy,
-      Instrumentation instrumentation,
+      GraphMutator mutator,
       long traceMethodThresholdNanos,
       long disableTraceThresholdNanos) {
     this.bootstrapProxy = bootstrapProxy;
-    this.mutator = new GraphMutator.Async(this, instrumentation);
+    this.mutator = mutator;
     this.traceMethodThresholdNanos = traceMethodThresholdNanos;
     this.disableTraceThresholdNanos = disableTraceThresholdNanos;
   }
 
-
+  // TODO: rename -> awaitUpdates
   public void blockProcess() {
-    mutator.blockProcess();
+    mutator.awaitUpdates();
   }
 
   public long getTraceMethodThresholdNanos() {

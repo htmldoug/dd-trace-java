@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,17 +34,21 @@ public class AutotraceNode {
   private final String className;
   private final String methodSignature;
   private final GraphMutator graphMutator;
+
   private final AtomicBoolean isExpanded = new AtomicBoolean(false);
-  private final AtomicReference<TracingState> tracingState =
-      new AtomicReference<>(TracingState.UNSET);
-  private final AtomicBoolean bytecodeTracingApplied = new AtomicBoolean(false);
-  private final Set<AutotraceNode> edges =
-      Collections.newSetFromMap(new ConcurrentHashMap<AutotraceNode, Boolean>());
+  private final AtomicReference<TracingState> tracingState = new AtomicReference<>(TracingState.UNSET);
+
+  private final Set<AutotraceNode> edges = Collections.newSetFromMap(new ConcurrentHashMap<AutotraceNode, Boolean>());
   // TODO: With default interface impls there may be more than one place to check for super bytecode
-  private final AtomicReference<AutotraceNode> superMethod = new AtomicReference<>(null);
-  private final Set<AutotraceNode> implMethods =
-      Collections.newSetFromMap(new ConcurrentHashMap<AutotraceNode, Boolean>());
+  // When implementation comes from a superclass
+  private final AtomicReference<AutotraceNode> superNode = new AtomicReference<>();
+  private final Set<AutotraceNode> implNodes = Collections.newSetFromMap(new ConcurrentHashMap<AutotraceNode, Boolean>());
+
+  // TODO
   final int accessFlags = 0;
+
+  private final AtomicInteger stateCount = new AtomicInteger(0);
+  private final AtomicInteger lastUpdateStateCount = new AtomicInteger(0);
 
   AutotraceNode(
       GraphMutator graphMutator,
@@ -57,6 +62,9 @@ public class AutotraceNode {
     this.classloader = new WeakReference<>(classloader);
     this.className = className;
     this.methodSignature = methodSignature;
+    if (this.className.startsWith("java.")) {
+      this.enableTracing(false);
+    }
   }
 
   public ClassLoader getClassLoader() {
@@ -88,49 +96,31 @@ public class AutotraceNode {
     return "<" + classloader.get() + "> " + className + "#" + methodSignature;
   }
 
-  // FIXME: rm
-  public void halfExpand() {
-    isExpanded.compareAndSet(false, true);
+  // TODO: Exposing internal state counters is pretty hacky
+  public boolean isBytecodeUpdated() {
+    return stateCount.get() == lastUpdateStateCount.get();
   }
 
-  // FIXME: rm
-  public void halfEnableTracing(boolean allowTracing) {
-    boolean updateBytecode;
-    if (allowTracing) {
-      updateBytecode = tracingState.compareAndSet(TracingState.UNSET, TracingState.TRACING_ENABLED);
-    } else {
-      // unset -> disabled transitions do not require bytecode changes
-      tracingState.compareAndSet(TracingState.UNSET, TracingState.TRACING_DISABLED);
-      updateBytecode =
-          tracingState.compareAndSet(TracingState.TRACING_ENABLED, TracingState.TRACING_DISABLED);
-    }
-    bytecodeTracingApplied.set(true);
+  public void markBytecodeUpdated() {
+    lastUpdateStateCount.set(stateCount.get());
   }
 
   public void enableTracing(boolean allowTracing) {
-    boolean updateBytecode;
     if (allowTracing) {
-      updateBytecode = tracingState.compareAndSet(TracingState.UNSET, TracingState.TRACING_ENABLED);
+      if (tracingState.compareAndSet(TracingState.UNSET, TracingState.TRACING_ENABLED)) {
+        stateCount.incrementAndGet();
+      }
     } else {
       // unset -> disabled transitions do not require bytecode changes
       tracingState.compareAndSet(TracingState.UNSET, TracingState.TRACING_DISABLED);
-      updateBytecode =
-          tracingState.compareAndSet(TracingState.TRACING_ENABLED, TracingState.TRACING_DISABLED);
+      if (tracingState.compareAndSet(TracingState.TRACING_ENABLED, TracingState.TRACING_DISABLED)) {
+        stateCount.incrementAndGet();
+      }
     }
-
-    if (updateBytecode || (!bytecodeTracingApplied.get())) {
-      bytecodeTracingApplied.set(false);
-      log.debug("{}: Tracing bytecode modification requested. State = {}", this, tracingState);
-      graphMutator.updateTracingInstrumentation(
-          this,
-          allowTracing,
-          new Runnable() {
-            @Override
-            public void run() {
-              log.debug("{}: Tracing bytecode modification complete.", this);
-              bytecodeTracingApplied.set(true);
-            }
-          });
+    if (!isBytecodeUpdated()) {
+      log.debug("{} request set trace state to {}", this, tracingState.get());
+      expand();
+      graphMutator.updateBytecode(this);
     }
   }
 
@@ -143,17 +133,12 @@ public class AutotraceNode {
   }
 
   public void expand() {
-    if (!isExpanded.get()) {
-      log.debug("{}: autotrace expansion requested", this);
-      graphMutator.expand(
-          this,
-          new Runnable() {
-            @Override
-            public void run() {
-              isExpanded.compareAndSet(false, true);
-              log.debug("{}: autotrace expansion complete", this);
-            }
-          });
+    if (isExpanded.compareAndSet(false, true)) {
+      stateCount.incrementAndGet();
+    }
+    if (!isBytecodeUpdated()) {
+      log.debug("{} request set expand state to {}", this, isExpanded.get());
+      graphMutator.updateBytecode(this);
     }
   }
 
@@ -169,21 +154,21 @@ public class AutotraceNode {
   }
 
   public void addSuperNode(AutotraceNode superNode) {
-    superMethod.compareAndSet(null, superNode);
+    this.superNode.compareAndSet(null, superNode);
   }
 
   public AutotraceNode getSuperNode() {
-    return superMethod.get();
+    return superNode.get();
   }
 
   public void addImplementations(AutotraceNode... implementations) {
     for (AutotraceNode impl : implementations) {
-      implMethods.add(impl);
+      this.implNodes.add(impl);
     }
   }
 
   public List<AutotraceNode> getImplementations() {
-    return Arrays.asList(implMethods.toArray(new AutotraceNode[0]));
+    return Arrays.asList(implNodes.toArray(new AutotraceNode[0]));
   }
 
   /** Determines if this node can be auto-traced. */

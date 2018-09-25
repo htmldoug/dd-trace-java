@@ -146,7 +146,6 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
     // third-pass: n3 is automatically discovered
     when:
     TEST_WRITER.clear()
-    graph.getNode(Helper.getClassLoader(), Helper.getName(), "n1(JJJJ)V", true)
     runUnderTrace("someTrace") {
       new Helper().n1(0, 0, 11, 0)
     }
@@ -265,15 +264,17 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
 
     when:
     // preload impl1
-    new SomeInterface.Impl1().someMethod(0)
     graph.getNode(Helper.getClassLoader(), Helper.getName(), "interfaceInvoker(Lsome/org/SomeInterface;)V", true).enableTracing(true)
     graph.blockProcess()
+    // TODO: rm println
+    println 'TEST: --- Helper trace and expansion complete ---'
     // warm-up
     runUnderTrace("someTrace") {
       new Helper().interfaceInvoker(new SomeInterface.Impl1())
     }
     TEST_WRITER.waitForTraces(1)
     graph.blockProcess()
+    println 'TEST: --- trace enabled on Impl1 ---'
     TEST_WRITER.clear()
     runUnderTrace("someTrace") {
       // impl1 already loaded. Discovered by expansion

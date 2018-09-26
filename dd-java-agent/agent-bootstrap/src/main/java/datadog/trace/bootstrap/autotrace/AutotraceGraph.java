@@ -2,7 +2,6 @@ package datadog.trace.bootstrap.autotrace;
 
 import datadog.trace.bootstrap.WeakMap;
 import datadog.trace.bootstrap.WeakMap.Provider;
-import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
@@ -18,8 +17,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class AutotraceGraph {
-  private static final AtomicReference<AutotraceGraph> globalGraph =
-      new AtomicReference<>(null);
+  private static final AtomicReference<AutotraceGraph> globalGraph = new AtomicReference<>(null);
 
   private final ClassLoader bootstrapProxy;
   private final GraphMutator mutator;

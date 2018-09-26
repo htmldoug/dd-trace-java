@@ -16,7 +16,6 @@ import io.opentracing.Scope;
 import io.opentracing.Span;
 import io.opentracing.tag.Tags;
 import io.opentracing.util.GlobalTracer;
-
 import java.lang.instrument.Instrumentation;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
@@ -27,11 +26,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-
 import lombok.extern.slf4j.Slf4j;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
@@ -51,75 +50,119 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
   private static final Instrumentation instrumentation = AgentInstaller.getInstrumentation();
 
   private final Queue<AutotraceNode> updateQueue = new ConcurrentLinkedQueue<>();
+  private final Queue<EdgeDiscoveryRequest> edgeDiscoveryQueue = new ConcurrentLinkedQueue<>();
   private final AtomicInteger iterationCount = new AtomicInteger(0);
   private final AtomicBoolean processing = new AtomicBoolean(false);
-  private final Thread updateThread = new Thread() {
-    @Override
-    public void run() {
-      final Map<AutotraceNode, Class<?>> nodesToUpdate = new HashMap<>();
-      while (true) {
-        int retransformCount = 0;
-        for (AutotraceNode node = updateQueue.poll(); node != null; node = updateQueue.poll()) {
-          if(!node.isBytecodeUpdated() && (!nodesToUpdate.containsKey(node))) {
-            try {
-              Class<?> clazz = node.getClassLoader().loadClass(node.getClassName());
-              nodesToUpdate.put(node, clazz);
-              log.debug("Updating node: {}", node);
-            } catch (Throwable t) {
-              log.debug("exception during autotrace node classload: " + node, t);
-            }
-          }
-          node.markBytecodeUpdated();
-        }
-        if (nodesToUpdate.size() > 0) {
-          try {
-            final Class[] nodeClasses = nodesToUpdate.values().toArray(new Class[0]);
-            final Set<Class<?>> implClasses = new HashSet<>();
-            // TODO: super classes?
-            for (Class<?> loadedClass : instrumentation.getAllLoadedClasses()) {
-              for (Class<?> nodeClass : nodeClasses) {
-                if (nodeClass != loadedClass && nodeClass.isAssignableFrom(loadedClass)) {
-                  log.debug("Found implementation for potential autotrace: {} isAssignableFrom {}", nodeClasses, loadedClass);
-                  implClasses.add(loadedClass);
-                  break;
-                }
+  private final Thread updateThread =
+      new Thread() {
+        @Override
+        public void run() {
+          final Map<AutotraceNode, Class<?>> nodesToUpdate = new HashMap<>();
+          final Set<EdgeDiscoveryRequest> edgeDiscoveryRequests =
+              Collections.newSetFromMap(new ConcurrentHashMap<EdgeDiscoveryRequest, Boolean>());
+          while (true) {
+            while (updateQueue.peek() == null && edgeDiscoveryQueue.peek() == null) {
+              processing.compareAndSet(true, false);
+              iterationCount.incrementAndGet();
+              try {
+                Thread.sleep(1);
+              } catch (InterruptedException e) {
               }
             }
-            log.debug("Retransforming {} classes", nodeClasses.length);
-            instrumentation.retransformClasses(nodeClasses);
-            retransformCount += nodeClasses.length;
-            if (implClasses.size() > 0) {
-              log.debug("Retransforming {} implementation classes", implClasses.size() );
-              instrumentation.retransformClasses(implClasses.toArray(new Class[0]));
-              retransformCount += implClasses.size();
+            processing.compareAndSet(false, true);
+            iterationCount.incrementAndGet();
+
+            int retransformCount = 0;
+            for (AutotraceNode node = updateQueue.poll(); node != null; node = updateQueue.poll()) {
+              if (!node.isBytecodeUpdated() && (!nodesToUpdate.containsKey(node))) {
+                try {
+                  Class<?> clazz = node.getClassLoader().loadClass(node.getClassName());
+                  nodesToUpdate.put(node, clazz);
+                  log.debug("Updating node: {}", node);
+                } catch (Throwable t) {
+                  log.debug("exception during autotrace node classload: " + node, t);
+                }
+              }
+              node.markBytecodeUpdated();
             }
-            log.debug("Retransformed {} classes total", retransformCount);
-          } catch (Throwable t) {
-            log.debug("exception during autotrace retransform", t);
+            for (EdgeDiscoveryRequest request = edgeDiscoveryQueue.poll();
+                request != null;
+                request = edgeDiscoveryQueue.poll()) {
+              edgeDiscoveryRequests.add(request);
+              request.node.markBytecodeUpdated();
+            }
+            if (edgeDiscoveryRequests.size() > 0 || nodesToUpdate.size() > 0) {
+              for (final EdgeDiscoveryRequest request : edgeDiscoveryRequests) {
+                try {
+                  final AutotraceNode edge =
+                      AutotraceGraph.get()
+                          .getNode(
+                              request.classLoader.loadClass(request.className).getClassLoader(),
+                              request.className,
+                              request.methodTypeSignature,
+                              true);
+                  request.node.addEdges(edge);
+                } catch (Throwable t) {
+                  log.debug(
+                      "Exception discovering edge for node: "
+                          + request.node
+                          + "  -- "
+                          + request.classLoader
+                          + " "
+                          + request.className
+                          + "#"
+                          + request.methodTypeSignature,
+                      t);
+                }
+              }
+              edgeDiscoveryRequests.clear();
+
+              if (nodesToUpdate.size() > 0) {
+                try {
+                  final Class[] nodeClasses = nodesToUpdate.values().toArray(new Class[0]);
+                  final Set<Class<?>> implClasses = new HashSet<>();
+                  // TODO: super classes?
+                  for (Class<?> loadedClass : instrumentation.getAllLoadedClasses()) {
+                    for (Class<?> nodeClass : nodeClasses) {
+                      if (nodeClass != loadedClass && nodeClass.isAssignableFrom(loadedClass)) {
+                        log.debug(
+                            "Found implementation for potential autotrace: {} isAssignableFrom {}",
+                            nodeClasses,
+                            loadedClass);
+                        implClasses.add(loadedClass);
+                        break;
+                      }
+                    }
+                  }
+                  log.debug("Retransforming {} classes", nodeClasses.length);
+                  instrumentation.retransformClasses(nodeClasses);
+                  retransformCount += nodeClasses.length;
+                  if (implClasses.size() > 0) {
+                    log.debug("Retransforming {} implementation classes", implClasses.size());
+                    instrumentation.retransformClasses(implClasses.toArray(new Class[0]));
+                    retransformCount += implClasses.size();
+                  }
+                  log.debug("Retransformed {} classes total", retransformCount);
+                } catch (Throwable t) {
+                  log.debug("exception during autotrace retransform", t);
+                }
+                nodesToUpdate.clear();
+              }
+            }
           }
-          nodesToUpdate.clear();
-        } else {
-          processing.compareAndSet(true, false);
         }
-        try {
-          Thread.sleep(1);
-        } catch (InterruptedException e) {
-        }
-        iterationCount.incrementAndGet();
-      }
-    }
-  };
+      };
 
   public AutoTraceInstrumentation() {
     super("autotrace");
     // TODO: right way to initialize the graph?
     if (AutotraceGraph.get() == null) {
       AutotraceGraph.set(
-        new AutotraceGraph(
-          Utils.getBootstrapProxy(),
-          this,
-          TimeUnit.NANOSECONDS.convert(10, TimeUnit.MILLISECONDS),
-          TimeUnit.NANOSECONDS.convert(1, TimeUnit.MILLISECONDS)));
+          new AutotraceGraph(
+              Utils.getBootstrapProxy(),
+              this,
+              TimeUnit.NANOSECONDS.convert(10, TimeUnit.MILLISECONDS),
+              TimeUnit.NANOSECONDS.convert(1, TimeUnit.MILLISECONDS)));
 
       updateThread.setName("dd-retransform-thread");
       updateThread.setDaemon(true);
@@ -127,10 +170,9 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
     }
   }
 
-
   public void updateBytecode(AutotraceNode node) {
-    processing.compareAndSet(false, true);
     updateQueue.add(node);
+    processing.compareAndSet(false, true);
   }
 
   public void awaitUpdates() {
@@ -142,7 +184,39 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
 
   private void awaitIteration(int count) {
     int awaitIteration = iterationCount.get() + count;
-    while (iterationCount.get() < awaitIteration) {
+    while (iterationCount.get() < awaitIteration) {}
+  }
+
+  void addEdgeForNode(
+      AutotraceNode node, ClassLoader classLoader, String className, String methodTypeSignature) {
+    boolean hasEdge = false;
+    for (final AutotraceNode edge : node.getEdges()) {
+      if (edge.getClassName().equals(className)
+          && edge.getMethodTypeSignature().equals(edge.getMethodTypeSignature())) {
+        hasEdge = true;
+        break;
+      }
+    }
+    if (!hasEdge) {
+      node.markBytecodeNotUpdated();
+      edgeDiscoveryQueue.add(
+          new EdgeDiscoveryRequest(node, classLoader, className, methodTypeSignature));
+      processing.compareAndSet(false, true);
+    }
+  }
+
+  private static class EdgeDiscoveryRequest {
+    public final AutotraceNode node;
+    public final ClassLoader classLoader;
+    public final String className;
+    public final String methodTypeSignature;
+
+    public EdgeDiscoveryRequest(
+        AutotraceNode node, ClassLoader classLoader, String className, String methodTypeSignature) {
+      this.node = node;
+      this.classLoader = classLoader;
+      this.className = className;
+      this.methodTypeSignature = methodTypeSignature;
     }
   }
 
@@ -194,15 +268,12 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
                                   implMethod.getName() + implMethod.getDescriptor())) {
                                 // add implementation node to the graph
                                 AutotraceNode implNode =
-                                  graph.getNode(
-                                    classLoader,
-                                    typeDescription.getName(),
-                                    superTypeSig,
-                                    true);
+                                    graph.getNode(
+                                        classLoader, typeDescription.getName(), superTypeSig, true);
                                 log.debug(
-                                  "Matcher found implementation for {} -- {}",
-                                  superNode,
-                                  implNode);
+                                    "Matcher found implementation for {} -- {}",
+                                    superNode,
+                                    implNode);
                                 superNode.addImplementations(implNode);
                                 implNode.addSuperNode(superNode);
                                 if (superNode.isTracingEnabled()) {
@@ -249,16 +320,16 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
                       public boolean matches(MethodDescription target) {
                         final String signature = target.getName() + target.getDescriptor();
                         final AutotraceNode node =
-                            graph
-                                .getNode(
-                                    loaderUnderTransform.get(),
-                                    typeUnderTransform.get().getName(),
-                                    signature,
-                                    false);
+                            graph.getNode(
+                                loaderUnderTransform.get(),
+                                typeUnderTransform.get().getName(),
+                                signature,
+                                false);
                         boolean match =
                             !target.isConstructor()
-                              && (!target.isAbstract())
-                              && node != null && node.isTracingEnabled();
+                                && (!target.isAbstract())
+                                && node != null
+                                && node.isTracingEnabled();
                         if (match) {
                           log.debug("Applying autotrace tracing advice to: {}", target);
                         }
@@ -280,7 +351,8 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
                     new MethodExpander(
                         classLoader,
                         typeDescription.getName(),
-                        graph.getNodes(classLoader, typeDescription.getName())));
+                        graph.getNodes(classLoader, typeDescription.getName()),
+                        AutoTraceInstrumentation.this));
               }
             })
         .asDecorator();

@@ -3,7 +3,7 @@ package datadog.trace.bootstrap.autotrace;
 /**
  * Means of updating the state of an autotrace graph.
  *
- * TODO: rename?
+ * <p>TODO: rename?
  */
 public interface GraphMutator {
   /**
@@ -17,7 +17,7 @@ public interface GraphMutator {
   /**
    * Block the current thread until all node updates have completed.
    *
-   * Do not call this method under a class-loading lock as that may cause deadlocks.
+   * <p>Do not call this method under a class-loading lock as that may cause deadlocks.
    */
   void awaitUpdates();
 }

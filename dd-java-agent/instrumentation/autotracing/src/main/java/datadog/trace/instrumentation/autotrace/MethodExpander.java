@@ -1,9 +1,7 @@
 package datadog.trace.instrumentation.autotrace;
 
 import datadog.trace.agent.tooling.Utils;
-import datadog.trace.bootstrap.autotrace.AutotraceGraph;
 import datadog.trace.bootstrap.autotrace.AutotraceNode;
-import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import net.bytebuddy.asm.AsmVisitorWrapper;
@@ -23,9 +21,13 @@ public class MethodExpander implements AsmVisitorWrapper {
   private final List<AutotraceNode> nodesToExpand;
   private final ClassLoader classLoader;
   private final String className;
+  private final AutoTraceInstrumentation autoTraceInstrumentation;
 
   public MethodExpander(
-      ClassLoader classLoader, String className, List<AutotraceNode> nodesToExpand) {
+      ClassLoader classLoader,
+      String className,
+      List<AutotraceNode> nodesToExpand,
+      AutoTraceInstrumentation autoTraceInstrumentation) {
     log.debug("autotrace expansion for {}", className);
     for (final AutotraceNode node : nodesToExpand) {
       if (!node.getClassName().equals(className)) {
@@ -37,6 +39,7 @@ public class MethodExpander implements AsmVisitorWrapper {
     this.nodesToExpand = nodesToExpand;
     this.className = className;
     this.classLoader = classLoader;
+    this.autoTraceInstrumentation = autoTraceInstrumentation;
   }
 
   @Override
@@ -91,7 +94,6 @@ public class MethodExpander implements AsmVisitorWrapper {
     }
 
     private class ExpansionMethodVisitor extends MethodVisitor {
-      private final List<AutotraceNode> edges = new ArrayList<>();
       private final AutotraceNode node;
 
       public ExpansionMethodVisitor(AutotraceNode node, MethodVisitor methodVisitor) {
@@ -99,29 +101,9 @@ public class MethodExpander implements AsmVisitorWrapper {
         this.node = node;
       }
 
-      private void addEdge(String className, String methodName, String methodDesc) {
-        try {
-          final AutotraceNode edge =
-            AutotraceGraph.get()
-              .getNode(
-                // TODO: don't load classes here (under a transformer)
-                classLoader.loadClass(className).getClassLoader(),
-                className,
-                methodName + methodDesc,
-                true);
-          if (!edges.contains(edge)) {
-            // TODO: rm this debug or clean up
-            log.debug(" -- found edge: {}#{}{}", className, methodName, methodDesc);
-            edges.add(edge);
-          }
-        } catch (ClassNotFoundException e) {
-          log.debug("exception discovering edge: " + className + "#" + methodName + methodDesc, e);
-        }
-      }
-
       @Override
       public void visitMethodInsn(int opcode, String owner, String name, String descriptor) {
-        addEdge(className, name, descriptor);
+        autoTraceInstrumentation.addEdgeForNode(node, classLoader, className, name + descriptor);
         super.visitMethodInsn(opcode, owner, name, descriptor);
       }
 
@@ -129,14 +111,8 @@ public class MethodExpander implements AsmVisitorWrapper {
       public void visitMethodInsn(
           int opcode, String owner, String name, String descriptor, boolean isInterface) {
         final String className = Utils.getClassName(owner);
-        addEdge(className, name, descriptor);
+        autoTraceInstrumentation.addEdgeForNode(node, classLoader, className, name + descriptor);
         super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
-      }
-
-      @Override
-      public void visitEnd() {
-        node.addEdges(edges);
-        super.visitEnd();
       }
     }
   }

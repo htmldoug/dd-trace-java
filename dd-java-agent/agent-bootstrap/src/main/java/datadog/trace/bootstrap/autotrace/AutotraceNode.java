@@ -30,7 +30,7 @@ public class AutotraceNode {
   private static final int ACC_FINAL = 0x0010;
   private static final int ACC_NATIVE = 0x0100;
 
-  private static final String[] skipNamespaces = { "java", "scala", "groovy", "kotlin", "clojure" };
+  private static final String[] skipNamespaces = {"java", "scala", "groovy", "kotlin", "clojure"};
 
   private final WeakReference<ClassLoader> classloader;
   private final String className;
@@ -38,13 +38,16 @@ public class AutotraceNode {
   private final GraphMutator graphMutator;
 
   private final AtomicBoolean isExpanded = new AtomicBoolean(false);
-  private final AtomicReference<TracingState> tracingState = new AtomicReference<>(TracingState.UNSET);
+  private final AtomicReference<TracingState> tracingState =
+      new AtomicReference<>(TracingState.UNSET);
 
-  private final Set<AutotraceNode> edges = Collections.newSetFromMap(new ConcurrentHashMap<AutotraceNode, Boolean>());
+  private final Set<AutotraceNode> edges =
+      Collections.newSetFromMap(new ConcurrentHashMap<AutotraceNode, Boolean>());
   // TODO: With default interface impls there may be more than one place to check for super bytecode
   // When implementation comes from a superclass
   private final AtomicReference<AutotraceNode> superNode = new AtomicReference<>();
-  private final Set<AutotraceNode> implNodes = Collections.newSetFromMap(new ConcurrentHashMap<AutotraceNode, Boolean>());
+  private final Set<AutotraceNode> implNodes =
+      Collections.newSetFromMap(new ConcurrentHashMap<AutotraceNode, Boolean>());
 
   // TODO
   final int accessFlags = 0;
@@ -102,7 +105,6 @@ public class AutotraceNode {
     return "<" + classloader.get() + "> " + className + "#" + methodSignature;
   }
 
-  // TODO: Exposing internal state counters is pretty hacky
   public boolean isBytecodeUpdated() {
     return stateCount.get() == lastUpdateStateCount.get();
   }
@@ -111,16 +113,20 @@ public class AutotraceNode {
     lastUpdateStateCount.set(stateCount.get());
   }
 
+  public void markBytecodeNotUpdated() {
+    stateCount.incrementAndGet();
+  }
+
   public void enableTracing(boolean allowTracing) {
     if (allowTracing) {
       if (tracingState.compareAndSet(TracingState.UNSET, TracingState.TRACING_ENABLED)) {
-        stateCount.incrementAndGet();
+        markBytecodeNotUpdated();
       }
     } else {
       // unset -> disabled transitions do not require bytecode changes
       tracingState.compareAndSet(TracingState.UNSET, TracingState.TRACING_DISABLED);
       if (tracingState.compareAndSet(TracingState.TRACING_ENABLED, TracingState.TRACING_DISABLED)) {
-        stateCount.incrementAndGet();
+        markBytecodeNotUpdated();
       }
     }
     if (!isBytecodeUpdated()) {
@@ -140,7 +146,7 @@ public class AutotraceNode {
 
   public void expand() {
     if (isExpanded.compareAndSet(false, true)) {
-      stateCount.incrementAndGet();
+      markBytecodeNotUpdated();
     }
     if (!isBytecodeUpdated()) {
       log.debug("{} request set expand state to {}", this, isExpanded.get());
@@ -148,15 +154,16 @@ public class AutotraceNode {
     }
   }
 
-  // TODO: use varargs
-  public void addEdges(List<AutotraceNode> edgesToAdd) {
+  public void addEdges(AutotraceNode... edgesToAdd) {
     for (AutotraceNode edgeToAdd : edgesToAdd) {
-      this.edges.add(edgeToAdd);
+      if (edges.add(edgeToAdd)) {
+        log.debug("{} : added edge: {}", this, edgesToAdd);
+      }
     }
   }
 
-  public List<AutotraceNode> getEdges() {
-    return Arrays.asList(edges.toArray(new AutotraceNode[0]));
+  public Set<AutotraceNode> getEdges() {
+    return edges;
   }
 
   public void addSuperNode(AutotraceNode superNode) {

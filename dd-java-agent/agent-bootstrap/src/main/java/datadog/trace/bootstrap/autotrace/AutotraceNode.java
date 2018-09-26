@@ -30,6 +30,8 @@ public class AutotraceNode {
   private static final int ACC_FINAL = 0x0010;
   private static final int ACC_NATIVE = 0x0100;
 
+  private static final String[] skipNamespaces = { "java", "scala", "groovy", "kotlin", "clojure" };
+
   private final WeakReference<ClassLoader> classloader;
   private final String className;
   private final String methodSignature;
@@ -62,8 +64,12 @@ public class AutotraceNode {
     this.classloader = new WeakReference<>(classloader);
     this.className = className;
     this.methodSignature = methodSignature;
-    if (this.className.startsWith("java.")) {
-      this.enableTracing(false);
+    for (final String skipPrefix : skipNamespaces) {
+      if (this.className.startsWith(skipPrefix)) {
+        log.debug("Skipping autotrace for core class {}", this);
+        isExpanded.set(true);
+        tracingState.set(TracingState.TRACING_DISABLED);
+      }
     }
   }
 

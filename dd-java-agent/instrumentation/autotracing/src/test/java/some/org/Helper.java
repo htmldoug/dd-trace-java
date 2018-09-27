@@ -72,4 +72,31 @@ public class Helper {
       throw new RuntimeException(e);
     }
   }
+
+  public void methodOnHelper(long sleepTimeMS) {
+    try {
+      Thread.sleep(sleepTimeMS);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  public void methodOverridden(long sleepTimeMS) {
+    try {
+      Thread.sleep(sleepTimeMS);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  public static class HelperOverride extends Helper {
+    @Override
+    public void methodOverridden(long sleepTimeMS) {
+      try {
+        Thread.sleep(sleepTimeMS);
+      } catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    }
+  }
 }

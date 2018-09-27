@@ -102,7 +102,14 @@ public class AutotraceNode {
 
   @Override
   public String toString() {
-    return "<" + classloader.get() + "> " + className + "#" + methodSignature;
+    return "<"
+        + classloader.get().getClass().getName()
+        + " "
+        + classloader.get().hashCode()
+        + "> "
+        + className
+        + "#"
+        + methodSignature;
   }
 
   public boolean isBytecodeUpdated() {

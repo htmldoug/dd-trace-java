@@ -15,8 +15,6 @@ import com.google.auto.service.AutoService;
 import datadog.trace.agent.tooling.Instrumenter;
 import datadog.trace.api.DDSpanTypes;
 import datadog.trace.api.DDTags;
-import datadog.trace.bootstrap.autotrace.AutotraceGraph;
-import datadog.trace.bootstrap.autotrace.AutotraceNode;
 import io.opentracing.Scope;
 import io.opentracing.Span;
 import io.opentracing.tag.Tags;
@@ -89,6 +87,7 @@ public final class HandlerAdapterInstrumentation extends Instrumenter.Default {
         clazz = method.getDeclaringClass();
         methodName = method.getName();
 
+        /*
         {
           final AutotraceNode springNode =
               AutotraceGraph.get()
@@ -98,11 +97,12 @@ public final class HandlerAdapterInstrumentation extends Instrumenter.Default {
                       methodName + AutotraceGraph.getMethodTypeDescriptor(method),
                       true);
           springNode.expand();
-          for (final AutotraceNode node : springNode.getEdges()) {
-            node.enableTracing(true);
+          for (final AutotraceNode edge : springNode.getEdges()) {
+            edge.enableTracing(true);
           }
           springNode.enableTracing(false); // already tracing with ootb instrumentation
         }
+        */
 
       } else if (handler instanceof HttpRequestHandler) {
         // org.springframework.web.servlet.mvc.HttpRequestHandlerAdapter

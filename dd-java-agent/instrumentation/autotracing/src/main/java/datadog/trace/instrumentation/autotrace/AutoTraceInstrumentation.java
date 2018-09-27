@@ -249,6 +249,7 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
                   }
                   for (TypeDescription superType : superTypes) {
                     while (superType != null) {
+                      // Safe to do because super class must already be loaded
                       final Class<?> superClass = classLoader.loadClass(superType.getName());
                       if (graph.isDiscovered(superClass.getClassLoader(), superType.getName())) {
                         for (final MethodDescription.InDefinedShape methodDescription :
@@ -266,6 +267,10 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
                                 typeDescription.getDeclaredMethods()) {
                               if (superTypeSig.equals(
                                   implMethod.getName() + implMethod.getDescriptor())) {
+                                if (implMethod.isStatic() || implMethod.isPrivate()) {
+                                  // static and private methods cannot be overridden
+                                  continue;
+                                }
                                 // add implementation node to the graph
                                 AutotraceNode implNode =
                                     graph.getNode(
@@ -346,7 +351,6 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
                   ClassLoader classLoader,
                   JavaModule module) {
                 // Hook up last to avoid discovering advice bytecode.
-                // TODO: How to handle other instrumentation's bytecode?
                 return builder.visit(
                     new MethodExpander(
                         classLoader,
@@ -385,7 +389,8 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
       final Span activeSpan = GlobalTracer.get().activeSpan();
       if (activeSpan != null) {
         final String autoTraceOpName =
-            typeName.replaceAll("^.*\\.([^\\.]+)", "$1").replace('$', '_')
+            // typeName.replaceAll("^.*\\.([^\\.]+)", "$1").replace('$', '_')
+            thiz.getClass().getName().replaceAll("^.*\\.([^\\.]+)", "$1").replace('$', '_')
                 + "."
                 + methodName.replace('$', '_');
         if (((MutableSpan) activeSpan).getOperationName().equals(autoTraceOpName)) {
@@ -397,7 +402,7 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
                 // TODO: $ -> _ ??
                 .buildSpan(autoTraceOpName)
                 .withTag(Tags.COMPONENT.getKey(), "autotrace")
-                .withTag("span.origin.type", thiz.getClass().getName())
+                .withTag("span.origin.type", typeName)
                 // TODO: something more human-readable than a descriptor
                 .withTag("span.origin.method", nodeSig)
                 .startActive(true);

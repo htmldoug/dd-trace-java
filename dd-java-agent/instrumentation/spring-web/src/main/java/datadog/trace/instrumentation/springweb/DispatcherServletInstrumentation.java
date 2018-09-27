@@ -62,10 +62,13 @@ public final class DispatcherServletInstrumentation extends Instrumenter.Default
 
       /*
       {
-        final AutotraceNode springNode = AutotraceGraph.discoverOrGet(thiz.getClass().getClassLoader(), thiz.getClass().getName(), nodeSig);
+        final AutotraceNode springNode =
+            AutotraceGraph.get()
+                .getNode(
+                    thiz.getClass().getClassLoader(), thiz.getClass().getName(), nodeSig, true);
         springNode.expand();
-        for (final AutotraceNode node : springNode.getEdges()) {
-          node.enableTracing(true);
+        for (final AutotraceNode edge : springNode.getEdges()) {
+          edge.enableTracing(true);
         }
         springNode.enableTracing(false); // already tracing with ootb instrumentation
       }

@@ -266,15 +266,12 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
     // preload impl1
     graph.getNode(Helper.getClassLoader(), Helper.getName(), "interfaceInvoker(Lsome/org/SomeInterface;)V", true).enableTracing(true)
     graph.blockProcess()
-    // TODO: rm println
-    println 'TEST: --- Helper trace and expansion complete ---'
     // warm-up
     runUnderTrace("someTrace") {
       new Helper().interfaceInvoker(new SomeInterface.Impl1())
     }
     TEST_WRITER.waitForTraces(1)
     graph.blockProcess()
-    println 'TEST: --- trace enabled on Impl1 ---'
     TEST_WRITER.clear()
     runUnderTrace("someTrace") {
       // impl1 already loaded. Discovered by expansion
@@ -359,7 +356,65 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
    }
   }
 
-  // TODO: Reflection linking
+  @Ignore
+  def "trace override method" () {
+    expect:
+    1 == 1
+  }
+
+  def "trace super method" () {
+    setup:
+    AutotraceGraph graph = AutotraceGraph.get()
+
+    when:
+    graph.getNode(Helper.getClassLoader(), Helper.getName(), "methodOnHelper(J)V", true).enableTracing(true)
+    graph.getNode(Helper.getClassLoader(), Helper.getName(), "methodOverridden(J)V", true).enableTracing(true)
+    graph.blockProcess()
+    // warm-up
+    runUnderTrace("someTrace") {
+      Helper override  = new Helper.HelperOverride()
+      override.methodOnHelper(10) // Helper bytecode
+      override.methodOverridden(10) // HelperOverride bytecode
+    }
+
+    then:
+    assertTraces(TEST_WRITER, 1) {
+     trace(0, 3) {
+       span(0) {
+         serviceName "unnamed-java-app"
+         operationName "someTrace"
+         errored false
+         tags {
+           defaultTags()
+         }
+       }
+       span(1) {
+         serviceName "unnamed-java-app"
+         operationName 'Helper_HelperOverride.methodOverridden'
+         errored false
+         tags {
+           "$Tags.COMPONENT.key" "autotrace"
+           "span.origin.type" 'some.org.Helper$HelperOverride'
+           "span.origin.method" "methodOverridden(J)V"
+           defaultTags()
+         }
+       }
+       span(2) {
+         serviceName "unnamed-java-app"
+         operationName 'Helper_HelperOverride.methodOnHelper'
+         errored false
+         tags {
+           "$Tags.COMPONENT.key" "autotrace"
+           "span.origin.type" 'some.org.Helper'
+           "span.origin.method" "methodOnHelper(J)V"
+           defaultTags()
+         }
+       }
+     }
+   }
+  }
+
+  // TODO:
   @Ignore
   def "trace reflection"() {
     when:
@@ -396,18 +451,6 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
 
   @Ignore
   def "trace async" () {
-    expect:
-    1 == 1
-  }
-
-  @Ignore
-  def "trace override method" () {
-    expect:
-    1 == 1
-  }
-
-  @Ignore
-  def "trace super method" () {
     expect:
     1 == 1
   }

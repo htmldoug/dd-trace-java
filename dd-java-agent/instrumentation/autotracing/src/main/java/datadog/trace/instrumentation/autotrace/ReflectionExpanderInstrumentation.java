@@ -15,6 +15,7 @@ import java.util.Map;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
+import org.slf4j.Logger;
 import sun.reflect.Reflection;
 
 @AutoService(Instrumenter.class)
@@ -22,11 +23,6 @@ public class ReflectionExpanderInstrumentation extends Instrumenter.Default {
   public ReflectionExpanderInstrumentation() {
     // TODO: Use same name/config as autotrace. Doesn't make sense to run one without the other.
     super("reflection-method");
-  }
-
-  @Override
-  protected boolean defaultEnabled() {
-    return false;
   }
 
   @Override
@@ -48,47 +44,44 @@ public class ReflectionExpanderInstrumentation extends Instrumenter.Default {
     @Advice.OnMethodEnter(suppress = Throwable.class)
     public static void expandAutotrace(
         @Advice.This final java.lang.reflect.Method method, @Advice.Argument(0) Object callee) {
-      final Class<?> callerClass = Reflection.getCallerClass();
-      if (AutotraceGraph.get().isDiscovered(callerClass.getClassLoader(), callerClass.getName())) {
-        // final AutotraceNode callerNode = AutotraceGraph.get().getNode(callerClass.getClassLoader(), callerClass.getName(), ??, false);
-      }
-
-      // TODO: link caller and callee nodes
-      // FIXME: Only do this if caller is already autotraced!
       if (GlobalTracer.get().activeSpan() != null) {
-        final AutotraceGraph graph = AutotraceGraph.get();
+        final Logger log = org.slf4j.LoggerFactory.getLogger("autodiscovery-reflection-expander");
+        final Class<?> callerClass = Reflection.getCallerClass();
+        if (AutotraceGraph.get().isDiscovered(callerClass.getClassLoader(), callerClass.getName())) {
+          // TODO: It would be better to only discover nodes if the caller method is discovered,
+          // but I don't know how to find the caller method without getting a stack trace (slow).
 
-        if (method.getDeclaringClass().getName().contains("spock")) {
-          // TODO: remove
-          return;
-        }
-        // TODO: static vs non-static calls
-        if (Modifier.isStatic(method.getModifiers())) {
-          final AutotraceNode calleeNode =
-              graph.getNode(
-                  method.getDeclaringClass().getClassLoader(),
-                  method.getDeclaringClass().getName(),
-                  method.getName() + AutotraceGraph.getMethodTypeDescriptor(method),
-                  false);
-          if (!calleeNode.isTracingEnabled()) {
-            System.out.println("-- FOUND STATIC NODE VIA REFLECTION: " + calleeNode);
-          }
-          calleeNode.enableTracing(true);
-        } else {
-          if (callee.getClass().getName().startsWith("java.lang.reflect")) {
-            // TODO: remove
+          final AutotraceGraph graph = AutotraceGraph.get();
+          if (method.getDeclaringClass().getName().contains("spock")) {
+            // skip spock unit-test calls
             return;
           }
-          final AutotraceNode calleeNode =
+          AutotraceNode calleeNode;
+          if (Modifier.isStatic(method.getModifiers())) {
+            calleeNode =
               graph.getNode(
-                  callee.getClass().getClassLoader(),
-                  callee.getClass().getName(),
-                  method.getName() + AutotraceGraph.getMethodTypeDescriptor(method),
-                  false);
-          if (!calleeNode.isTracingEnabled()) {
-            System.out.println("-- FOUND NON-STATIC NODE VIA REFLECTION: " + calleeNode);
+                method.getDeclaringClass().getClassLoader(),
+                method.getDeclaringClass().getName(),
+                method.getName() + AutotraceGraph.getMethodTypeDescriptor(method),
+                false);
+          } else {
+            calleeNode =
+              graph.getNode(
+                callee.getClass().getClassLoader(),
+                callee.getClass().getName(),
+                method.getName() + AutotraceGraph.getMethodTypeDescriptor(method),
+                false);
           }
-          calleeNode.enableTracing(true);
+          if (calleeNode == null) {
+            calleeNode =
+              graph.getNode(
+                method.getDeclaringClass().getClassLoader(),
+                method.getDeclaringClass().getName(),
+                method.getName() + AutotraceGraph.getMethodTypeDescriptor(method),
+                true);
+            log.debug("Discovered via reflection method invoke: {}", calleeNode);
+            calleeNode.enableTracing(true);
+          }
         }
       }
     }

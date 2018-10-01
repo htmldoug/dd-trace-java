@@ -414,12 +414,24 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
    }
   }
 
-  // TODO:
   def "trace reflection"() {
+    setup:
+    AutotraceGraph graph = AutotraceGraph.get()
+
     when:
-    Method m = Helper.getMethod("callByReflection")
+    graph.getNode(Helper.getClassLoader(), Helper.getName(), "reflectionTest()V", true).enableTracing(false)
+    graph.awaitUpdates()
     runUnderTrace("someTrace") {
-      m.invoke(new Helper())
+      final Helper helper = new Helper()
+      helper.reflectionTest()
+      graph.awaitUpdates()
+      helper.reflectionTest()
+    }
+    graph.awaitUpdates()
+    TEST_WRITER.waitForTraces(1)
+    TEST_WRITER.clear()
+    runUnderTrace("someTrace") {
+      new Helper().reflectionTest()
     }
 
     then:

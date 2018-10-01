@@ -1,5 +1,8 @@
 package some.org;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+
 public class Helper {
   public void someMethod(long sleepTimeMS) {
     try {
@@ -40,6 +43,24 @@ public class Helper {
     try {
       Thread.sleep(sleepTimeMS);
     } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+
+  private static final Method method;
+  static {
+    try {
+      method = Helper.class.getMethod("callByReflection");
+    } catch (NoSuchMethodException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  public void reflectionTest() {
+    try {
+      method.invoke(this);
+    } catch (Exception e) {
       throw new RuntimeException(e);
     }
   }

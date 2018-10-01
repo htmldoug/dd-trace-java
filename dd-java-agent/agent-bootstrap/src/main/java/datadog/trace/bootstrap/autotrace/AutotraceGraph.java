@@ -37,8 +37,7 @@ public class AutotraceGraph {
     this.disableTraceThresholdNanos = disableTraceThresholdNanos;
   }
 
-  // TODO: rename -> awaitUpdates
-  public void blockProcess() {
+  public void awaitUpdates() {
     mutator.awaitUpdates();
   }
 

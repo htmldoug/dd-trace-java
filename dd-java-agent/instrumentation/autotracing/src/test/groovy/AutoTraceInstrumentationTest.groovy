@@ -40,7 +40,7 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
     when:
     TEST_WRITER.clear()
     graph.getNode(Helper.getClassLoader(), Helper.getName(), "someMethod(J)V", true).enableTracing(true)
-    graph.blockProcess()
+    graph.awaitUpdates()
     runUnderTrace("someTrace") {
       new Helper().someMethod(11)
     }
@@ -103,7 +103,7 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
       slowTestRun = true
     }
     TEST_WRITER.waitForTraces(1)
-    graph.blockProcess()
+    graph.awaitUpdates()
 
     then:
     TEST_WRITER.size() == 1
@@ -119,12 +119,12 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
     when:
     // first-pass: n1 is manually discovered
     graph.getNode(Helper.getClassLoader(), Helper.getName(), "n1(JJJJ)V", true).enableTracing(true)
-    graph.blockProcess()
+    graph.awaitUpdates()
     runUnderTrace("someTrace") {
       new Helper().n1(0, 0, 11, 0)
     }
     TEST_WRITER.waitForTraces(1)
-    graph.blockProcess()
+    graph.awaitUpdates()
 
     then:
     TEST_WRITER.size() == 1
@@ -137,7 +137,7 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
       new Helper().n1(0, 0, 11, 0)
     }
     TEST_WRITER.waitForTraces(1)
-    graph.blockProcess()
+    graph.awaitUpdates()
 
     then:
     TEST_WRITER.size() == 1
@@ -205,13 +205,13 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
     // TODO
     when:
     graph.getNode(Helper.getClassLoader(), Helper.getName(), "exceptionEater()V", true).enableTracing(true)
-    graph.blockProcess()
+    graph.awaitUpdates()
     // warm-up
     runUnderTrace("someTrace") {
       new Helper().exceptionEater()
     }
     TEST_WRITER.waitForTraces(1)
-    graph.blockProcess()
+    graph.awaitUpdates()
     TEST_WRITER.clear()
     runUnderTrace("someTrace") {
       new Helper().exceptionEater()
@@ -265,13 +265,13 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
     when:
     // preload impl1
     graph.getNode(Helper.getClassLoader(), Helper.getName(), "interfaceInvoker(Lsome/org/SomeInterface;)V", true).enableTracing(true)
-    graph.blockProcess()
+    graph.awaitUpdates()
     // warm-up
     runUnderTrace("someTrace") {
       new Helper().interfaceInvoker(new SomeInterface.Impl1())
     }
     TEST_WRITER.waitForTraces(1)
-    graph.blockProcess()
+    graph.awaitUpdates()
     TEST_WRITER.clear()
     runUnderTrace("someTrace") {
       // impl1 already loaded. Discovered by expansion
@@ -369,7 +369,7 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
     when:
     graph.getNode(Helper.getClassLoader(), Helper.getName(), "methodOnHelper(J)V", true).enableTracing(true)
     graph.getNode(Helper.getClassLoader(), Helper.getName(), "methodOverridden(J)V", true).enableTracing(true)
-    graph.blockProcess()
+    graph.awaitUpdates()
     // warm-up
     runUnderTrace("someTrace") {
       Helper override  = new Helper.HelperOverride()
@@ -415,7 +415,6 @@ class AutoTraceInstrumentationTest extends AgentTestRunner {
   }
 
   // TODO:
-  @Ignore
   def "trace reflection"() {
     when:
     Method m = Helper.getMethod("callByReflection")

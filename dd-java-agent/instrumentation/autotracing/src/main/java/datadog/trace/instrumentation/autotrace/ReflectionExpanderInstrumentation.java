@@ -15,6 +15,7 @@ import java.util.Map;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
+import sun.reflect.Reflection;
 
 @AutoService(Instrumenter.class)
 public class ReflectionExpanderInstrumentation extends Instrumenter.Default {
@@ -47,13 +48,10 @@ public class ReflectionExpanderInstrumentation extends Instrumenter.Default {
     @Advice.OnMethodEnter(suppress = Throwable.class)
     public static void expandAutotrace(
         @Advice.This final java.lang.reflect.Method method, @Advice.Argument(0) Object callee) {
-      /*
       final Class<?> callerClass = Reflection.getCallerClass();
-      if (AutotraceGraph.isDiscovered(callerClass.getClassLoader(), callerClass.getName())) {
-        // final AutotraceNode callerNode = AutotraceGraph.getDiscoveredNode(callerClass.getClassLoader(), callerClass.getName(), ??);
-
+      if (AutotraceGraph.get().isDiscovered(callerClass.getClassLoader(), callerClass.getName())) {
+        // final AutotraceNode callerNode = AutotraceGraph.get().getNode(callerClass.getClassLoader(), callerClass.getName(), ??, false);
       }
-      */
 
       // TODO: link caller and callee nodes
       // FIXME: Only do this if caller is already autotraced!

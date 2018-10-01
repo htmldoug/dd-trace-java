@@ -16,6 +16,10 @@ import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.description.type.TypeDescription;
+import net.bytebuddy.dynamic.DynamicType;
+import net.bytebuddy.implementation.auxiliary.MethodCallProxy;
+import net.bytebuddy.implementation.bytecode.StackManipulation;
+import net.bytebuddy.implementation.bytecode.assign.Assigner;
 import net.bytebuddy.matcher.ElementMatcher;
 import net.bytebuddy.utility.JavaModule;
 
@@ -117,7 +121,15 @@ public interface Instrumenter {
                 new AgentBuilder.Transformer.ForAdvice()
                     .include(Utils.getAgentClassLoader())
                     .withExceptionHandler(ExceptionHandlers.defaultExceptionHandler())
-                    .advice(entry.getKey(), entry.getValue()));
+                    .advice(entry.getKey(), entry.getValue()))
+        .transform(new AgentBuilder.Transformer() {
+          @Override
+          public DynamicType.Builder<?> transform(DynamicType.Builder<?> builder, TypeDescription typeDescription, ClassLoader classLoader, JavaModule module) {
+            // remap context
+            return builder;
+          }
+        })
+        ;
       }
       return agentBuilder;
     }

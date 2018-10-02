@@ -384,15 +384,15 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
   public static class AutoTraceAdvice {
     @Advice.OnMethodEnter(suppress = Throwable.class)
     public static Scope startSpan(
-        @Advice.This final Object thiz,
-        @Advice.Origin("#t") final String typeName,
-        @Advice.Origin("#m") final String methodName,
-        @Advice.Origin("#m#d") final String nodeSig) {
+      @Advice.Origin final Class<?> clazz,
+      @Advice.Origin("#t") final String typeName,
+      @Advice.Origin("#m") final String methodName,
+      @Advice.Origin("#m#d") final String nodeSig) {
       final Span activeSpan = GlobalTracer.get().activeSpan();
       if (activeSpan != null) {
         final String autoTraceOpName =
             // typeName.replaceAll("^.*\\.([^\\.]+)", "$1").replace('$', '_')
-            thiz.getClass().getName().replaceAll("^.*\\.([^\\.]+)", "$1").replace('$', '_')
+            clazz.getName().replaceAll("^.*\\.([^\\.]+)", "$1").replace('$', '_')
                 + "."
                 + methodName.replace('$', '_');
         if (((MutableSpan) activeSpan).getOperationName().equals(autoTraceOpName)) {
@@ -416,7 +416,7 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
 
     @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
     public static void stopSpanAndExpand(
-        @Advice.This final Object thiz,
+        @Advice.Origin final Class<?> clazz,
         @Advice.Origin("#t") final String typeName,
         @Advice.Origin("#m#d") final String nodeSig,
         @Advice.Enter final Scope scope,
@@ -435,7 +435,7 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
           // TODO: retransform to remove unneeded expansion calls after first pass
           {
             final AutotraceNode node =
-                graph.getNode(thiz.getClass().getClassLoader(), typeName, nodeSig, false);
+                graph.getNode(clazz.getClassLoader(), typeName, nodeSig, false);
             if (node != null) {
               for (AutotraceNode edge : node.getEdges()) {
                 edge.enableTracing(true);
@@ -444,7 +444,7 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
           }
         } else if (spanDurationNano < graph.getDisableTraceThresholdNanos()) {
           final AutotraceNode node =
-              graph.getNode(thiz.getClass().getClassLoader(), typeName, nodeSig, false);
+              graph.getNode(clazz.getClassLoader(), typeName, nodeSig, false);
           node.enableTracing(false);
         }
       }

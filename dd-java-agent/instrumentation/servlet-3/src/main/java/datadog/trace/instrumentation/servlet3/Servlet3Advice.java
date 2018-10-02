@@ -39,7 +39,7 @@ public class Servlet3Advice {
       for (final AutotraceNode node : servletNode.getEdges()) {
         node.enableTracing(true);
       }
-      servletNode.enableTracing(false); // already tracing with servlet instrumentation
+      // servletNode.enableTracing(false); // already tracing with servlet instrumentation
     }
     if (GlobalTracer.get().activeSpan() != null || !(req instanceof HttpServletRequest)) {
       // Tracing might already be applied by the FilterChain.  If so ignore this.

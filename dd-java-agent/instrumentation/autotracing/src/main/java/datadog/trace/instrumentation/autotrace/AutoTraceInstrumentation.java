@@ -39,6 +39,7 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.dynamic.DynamicType;
 import net.bytebuddy.matcher.ElementMatcher;
 import net.bytebuddy.utility.JavaModule;
+import org.slf4j.Logger;
 
 @Slf4j
 @AutoService(Instrumenter.class)
@@ -332,6 +333,7 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
                                 false);
                         boolean match =
                             !target.isConstructor()
+                                && (!target.isTypeInitializer())
                                 && (!target.isAbstract())
                                 && node != null
                                 && node.isTracingEnabled();
@@ -420,6 +422,7 @@ public final class AutoTraceInstrumentation extends Instrumenter.Default impleme
         @Advice.Enter final Scope scope,
         @Advice.Thrown final Throwable throwable) {
       if (scope != null) {
+        final Logger log = org.slf4j.LoggerFactory.getLogger("autotrace-instrumentation");
         final AutotraceGraph graph = AutotraceGraph.get();
         if (throwable != null) {
           Tags.ERROR.set(scope.span(), true);

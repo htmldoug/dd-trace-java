@@ -46,42 +46,39 @@ public class ReflectionExpanderInstrumentation extends Instrumenter.Default {
         @Advice.This final java.lang.reflect.Method method, @Advice.Argument(0) Object callee) {
       if (GlobalTracer.get().activeSpan() != null) {
         final Logger log = org.slf4j.LoggerFactory.getLogger("autodiscovery-reflection-expander");
-        final Class<?> callerClass = Reflection.getCallerClass();
-        if (AutotraceGraph.get().isDiscovered(callerClass.getClassLoader(), callerClass.getName())) {
-          // TODO: It would be better to only discover nodes if the caller method is discovered,
-          // but I don't know how to find the caller method without getting a stack trace (slow).
+        // final Class<?> callerClass = Reflection.getCallerClass();
+        // AutotraceGraph.get().isDiscovered(callerClass.getClassLoader(), callerClass.getName())
 
-          final AutotraceGraph graph = AutotraceGraph.get();
-          if (method.getDeclaringClass().getName().contains("spock")) {
-            // skip spock unit-test calls
-            return;
-          }
-          AutotraceNode calleeNode;
-          if (Modifier.isStatic(method.getModifiers())) {
-            calleeNode =
-              graph.getNode(
-                method.getDeclaringClass().getClassLoader(),
-                method.getDeclaringClass().getName(),
-                method.getName() + AutotraceGraph.getMethodTypeDescriptor(method),
-                false);
-          } else {
-            calleeNode =
-              graph.getNode(
-                callee.getClass().getClassLoader(),
-                callee.getClass().getName(),
-                method.getName() + AutotraceGraph.getMethodTypeDescriptor(method),
-                false);
-          }
-          if (calleeNode == null) {
-            calleeNode =
-              graph.getNode(
-                method.getDeclaringClass().getClassLoader(),
-                method.getDeclaringClass().getName(),
-                method.getName() + AutotraceGraph.getMethodTypeDescriptor(method),
-                true);
-            log.debug("Discovered via reflection method invoke: {}", calleeNode);
-            calleeNode.enableTracing(true);
-          }
+        final AutotraceGraph graph = AutotraceGraph.get();
+        if (method.getDeclaringClass().getName().contains("spock")) {
+          // skip spock unit-test calls
+          return;
+        }
+        AutotraceNode calleeNode;
+        if (Modifier.isStatic(method.getModifiers())) {
+          calleeNode =
+            graph.getNode(
+              method.getDeclaringClass().getClassLoader(),
+              method.getDeclaringClass().getName(),
+              method.getName() + AutotraceGraph.getMethodTypeDescriptor(method),
+              false);
+        } else {
+          calleeNode =
+            graph.getNode(
+              callee.getClass().getClassLoader(),
+              callee.getClass().getName(),
+              method.getName() + AutotraceGraph.getMethodTypeDescriptor(method),
+              false);
+        }
+        if (calleeNode == null) {
+          calleeNode =
+            graph.getNode(
+              method.getDeclaringClass().getClassLoader(),
+              method.getDeclaringClass().getName(),
+              method.getName() + AutotraceGraph.getMethodTypeDescriptor(method),
+              true);
+          log.debug("Discovered via reflection method invoke: {}", calleeNode);
+          calleeNode.enableTracing(true);
         }
       }
     }

@@ -125,6 +125,7 @@ public final class JaxRsAnnotationsInstrumentation extends Instrumenter.Default 
 
       final String operationName = className + "." + methodName;
 
+      /*
       {
         final AutotraceNode jaxNode =
             AutotraceGraph.get().getNode(clazz.getClassLoader(), clazz.getName(), nodeSig, true);
@@ -134,6 +135,7 @@ public final class JaxRsAnnotationsInstrumentation extends Instrumenter.Default 
         }
         jaxNode.enableTracing(false); // already tracing with ootb instrumentation
       }
+      */
 
       return GlobalTracer.get()
           .buildSpan(operationName)
